@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel de Fontes Públicas</title>
+<style>
+  :root {
+    --pagina: #f9f9f7;        /* fundo da pagina */
+    --superficie: #ffffff;    /* fundo dos cartoes e graficos */
+    --tinta: #0b0b0b;         /* texto principal */
+    --tinta-2: #52514e;       /* texto secundario */
+    --tinta-3: #898781;       /* texto apagado (detalhes) */
+    --borda: rgba(11, 11, 11, 0.10);
+    --serie-1: #2a78d6;       /* azul: 1a serie e links */
+    --serie-2: #eb6834;       /* laranja: 2a serie */
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--pagina);
+    color: var(--tinta);
+    font-family: system-ui, "Segoe UI", Arial, sans-serif;
+    line-height: 1.45;
+  }
+  .pagina { max-width: 1000px; margin: 0 auto; padding: 28px 16px 48px; }
+  header h1 { margin: 0 0 4px; font-size: 1.65rem; }
+  header p { margin: 0 0 24px; color: var(--tinta-2); }
+  .cartoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+    gap: 14px;
+  }
+  .cartao {
+    background: var(--superficie);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .cartao .valor { margin: 0; font-size: 1.9rem; font-weight: 700; }
+  .cartao .rotulo { margin: 2px 0 4px; font-weight: 600; font-size: 0.95rem; }
+  .cartao .detalhe { margin: 0; font-size: 0.8rem; color: var(--tinta-3); }
+  .grafico {
+    background: var(--superficie);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-top: 18px;
+  }
+  .grafico h2 { margin: 0 0 12px; font-size: 1.05rem; }
+  .area-grafico { position: relative; height: 330px; }
+  .aviso {
+    background: #fff7e6;
+    border: 1px solid #e8c877;
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  footer { margin-top: 24px; font-size: 0.85rem; color: var(--tinta-2); }
+  footer ul { margin: 6px 0 0; padding-left: 20px; }
+  footer a { color: var(--serie-1); }
+</style>
+</head>
+<body>
+<div class="pagina">
+  <header>
+    <h1>Painel de Fontes Públicas</h1>
+    <p>Do dado aberto ao painel: um coletor em Python baixa as planilhas,
+       consolida os números e esta página apresenta o resultado.</p>
+  </header>
+
+  <section class="cartoes" id="cartoes" aria-label="Indicadores principais"></section>
+
+  <section class="grafico">
+    <h2 id="tituloSeries">Evolução mensal</h2>
+    <div class="area-grafico">
+      <canvas id="graficoLinhas" role="img" aria-label="Gráfico de linhas das séries mensais"></canvas>
+    </div>
+  </section>
+
+  <section class="grafico">
+    <h2 id="tituloCategorias">Categorias</h2>
+    <div class="area-grafico">
+      <canvas id="graficoBarras" role="img" aria-label="Gráfico de barras por categoria"></canvas>
+    </div>
+  </section>
+
+  <footer>
+    <p>Atualizado em <strong id="atualizadoEm">...</strong> pelo coletor.py.</p>
+    <p>Fontes dos dados:</p>
+    <ul id="listaFontes"></ul>
+  </footer>
+</div>
+
+<!-- 1) os dados gerados pelo coletor; 2) a biblioteca de graficos -->
+<script src="dados/dados.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+  const dados = window.DADOS;
+  const formato = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 });
+
+  if (!dados) {
+    // O coletor ainda nao rodou: orienta em vez de quebrar.
+    document.getElementById("cartoes").innerHTML =
+      '<p class="aviso">Dados não encontrados. Rode <code>python coletor.py</code> ' +
+      'nesta pasta e recarregue a página.</p>';
+  } else {
+    montarPainel();
+  }
+
+  function montarPainel() {
+    // Cartoes de KPI, um por item de DADOS.kpis
+    document.getElementById("cartoes").innerHTML = dados.kpis.map(kpi => `
+      <article class="cartao">
+        <p class="valor">${formato.format(kpi.valor)}</p>
+        <p class="rotulo">${kpi.rotulo}</p>
+        <p class="detalhe">${kpi.detalhe}</p>
+      </article>`).join("");
+
+    // Rodape: quando o coletor rodou e de onde vieram os dados
+    document.getElementById("atualizadoEm").textContent =
+      new Date(dados.geradoEm).toLocaleString("pt-BR",
+        { dateStyle: "short", timeStyle: "short" });
+    document.getElementById("listaFontes").innerHTML = dados.fontes.map(fonte =>
+      `<li><a href="${fonte.url}" target="_blank" rel="noopener">${fonte.nome}</a></li>`
+    ).join("");
+
+    if (!window.Chart) {
+      document.getElementById("tituloSeries").textContent =
+        "Sem internet para carregar a biblioteca de gráficos (Chart.js)";
+      return;
+    }
+
+    // Aparencia comum dos dois graficos
+    Chart.defaults.color = "#52514e";
+    Chart.defaults.borderColor = "#e1e0d9";
+    Chart.defaults.font.family = 'system-ui, "Segoe UI", Arial, sans-serif';
+    const cores = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"];
+
+    // Grafico de linhas: uma linha por conjunto de DADOS.series
+    document.getElementById("tituloSeries").textContent =
+      "Evolução mensal: " + dados.series.conjuntos.map(c => c.nome).join(" e ");
+    new Chart(document.getElementById("graficoLinhas"), {
+      type: "line",
+      data: {
+        labels: dados.series.rotulos,
+        datasets: dados.series.conjuntos.map((conjunto, i) => ({
+          label: conjunto.nome,
+          data: conjunto.valores,
+          borderColor: cores[i % cores.length],
+          backgroundColor: cores[i % cores.length],
+          borderWidth: 2,
+          pointRadius: 2.5,
+          pointHoverRadius: 5,
+          pointHitRadius: 12,
+          tension: 0.25,
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { position: "bottom" } },
+        scales: {
+          x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 9 } },
+        },
+      },
+    });
+
+    // Grafico de barras horizontais: contagem por categoria
+    document.getElementById("tituloCategorias").textContent = dados.categorias.titulo;
+    new Chart(document.getElementById("graficoBarras"), {
+      type: "bar",
+      data: {
+        labels: dados.categorias.rotulos,
+        datasets: [{
+          data: dados.categorias.valores,
+          backgroundColor: cores[0],
+          borderRadius: 4,
+          borderSkipped: "start",
+        }],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true } },
+      },
+    });
+  }
+</script>
+</body>
+</html>
